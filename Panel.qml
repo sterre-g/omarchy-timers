@@ -13,6 +13,11 @@ Panel {
 
   property int cursorIndex: 0
   property bool cursorActive: false
+  property string customError: ""
+
+  readonly property int pomodoroMinutes: Math.round(Number(root.setting("pomodoroWorkMinutes", 25)))
+  readonly property var customs: root.service ? root.service.customs : []
+  readonly property var customRuntimes: root.service ? root.service.customRuntimes : ({})
 
   // One singleton service owns the clock for every monitor. Two bars means two
   // copies of this widget, and a timer that ran here would fire twice.
@@ -55,6 +60,31 @@ Panel {
     if (!root.service) return
     root.service.applySettings(root.settings)
     root.service.registerWidget(root)
+  }
+
+  // Preset lengths are written back into the widget's own shell.json entry, so
+  // the choice outlives the shell rather than living in this instance.
+  function setPomodoroMinutes(minutes) {
+    var entry = { id: root.moduleName }
+    for (var key in root.settings) {
+      if (key !== "id") entry[key] = root.settings[key]
+    }
+    entry["pomodoroWorkMinutes"] = minutes
+    root.settings = entry
+    if (root.bar && root.bar.shell && typeof root.bar.shell.updateEntryInline === "function")
+      root.bar.shell.updateEntryInline(root.moduleName, entry)
+    if (root.service) root.service.applySettings(entry)
+  }
+
+  function submitCustom() {
+    if (!root.service) return
+    var result = root.service.addCustom(customField.text)
+    if (result.ok) {
+      customField.text = ""
+      root.customError = ""
+    } else {
+      root.customError = result.error
+    }
   }
 
   function ruleAt(index) {
@@ -115,6 +145,7 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
+      blocked: customField.activeFocus
       onMoveRequested: function (dx, dy) {
         if (!root.cursorActive) {
           root.cursorActive = true
@@ -136,9 +167,20 @@ Panel {
         else if (t === "o" || t === "O") root.service.stopRule(rule.id)
       }
 
+      Flickable {
+        id: flick
+        anchors.fill: parent
+        contentWidth: width
+        contentHeight: column.implicitHeight
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        flickableDirection: Flickable.VerticalFlick
+        interactive: contentHeight > height
+        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
       Column {
         id: column
-        width: parent.width
+        width: flick.width
         spacing: Style.space(8)
 
         PanelSectionHeader {
@@ -274,6 +316,165 @@ Panel {
           foreground: root.foreground
         }
 
+        PanelSectionHeader {
+          width: parent.width
+          text: "Focus length"
+          foreground: root.dim
+          fontFamily: root.fontFamily
+        }
+
+        Flow {
+          width: parent.width
+          spacing: Style.spacing.xs
+
+          Repeater {
+            model: Model.POMODORO_PRESETS
+
+            Button {
+              required property var modelData
+
+              text: modelData + "m"
+              bordered: true
+              selected: root.pomodoroMinutes === modelData
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              fontSize: Style.font.caption
+              onClicked: root.setPomodoroMinutes(modelData)
+            }
+          }
+        }
+
+        PanelSeparator {
+          width: parent.width
+          foreground: root.foreground
+        }
+
+        PanelSectionHeader {
+          width: parent.width
+          text: "Custom timers"
+          foreground: root.dim
+          fontFamily: root.fontFamily
+        }
+
+        Repeater {
+          model: root.customs
+
+          Item {
+            id: customRow
+
+            required property var modelData
+            required property int index
+
+            width: parent.width
+            implicitHeight: Math.max(customLabel.implicitHeight, customActions.implicitHeight)
+
+            Column {
+              id: customLabel
+              anchors.left: parent.left
+              anchors.right: customActions.left
+              anchors.rightMargin: Style.spacing.sm
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.spacing.xxs
+
+              Text {
+                width: parent.width
+                text: customRow.modelData.label
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.subtitle
+                color: customRow.modelData.enabled === false ? root.dim : root.foreground
+                elide: Text.ElideRight
+              }
+
+              Text {
+                width: parent.width
+                text: Model.describeCustom(customRow.modelData) + ", "
+                  + Model.nextDueText(customRow.modelData, root.customRuntimes[customRow.index], Model.clockFrom(new Date()))
+                font.family: root.fontFamily
+                font.pixelSize: Style.font.caption
+                color: root.dim
+                elide: Text.ElideRight
+              }
+            }
+
+            Row {
+              id: customActions
+              anchors.right: parent.right
+              anchors.verticalCenter: parent.verticalCenter
+              spacing: Style.spacing.xs
+
+              PanelActionButton {
+                iconText: customRow.modelData.enabled === false ? "\uf04b" : "\uf04c"
+                tooltipText: customRow.modelData.enabled === false ? "Enable" : "Pause"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                onClicked: if (root.service) root.service.toggleCustom(customRow.index)
+              }
+
+              PanelActionButton {
+                iconText: "\uf00d"
+                tooltipText: "Delete"
+                foreground: root.foreground
+                fontFamily: root.fontFamily
+                onClicked: if (root.service) root.service.removeCustom(customRow.index)
+              }
+            }
+          }
+        }
+
+        Text {
+          width: parent.width
+          visible: root.customs.length === 0
+          text: "None yet. Add one below, and it will still be here after a restart."
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          color: root.dim
+          wrapMode: Text.WordWrap
+        }
+
+        Item {
+          width: parent.width
+          implicitHeight: customField.implicitHeight
+
+          TextField {
+            id: customField
+            anchors.left: parent.left
+            anchors.right: addButton.left
+            anchors.rightMargin: Style.spacing.sm
+            anchors.verticalCenter: parent.verticalCenter
+            placeholderText: "Stretch at 14:30"
+            foreground: root.foreground
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            onAccepted: root.submitCustom()
+          }
+
+          Button {
+            id: addButton
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            text: "Add"
+            bordered: true
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            fontSize: Style.font.caption
+            onClicked: root.submitCustom()
+          }
+        }
+
+        Text {
+          width: parent.width
+          text: root.customError !== "" ? root.customError : "Stretch at 14:30, Standup at 09:45 weekdays, Water every 45"
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          color: root.customError !== "" ? Color.urgent : root.dim
+          wrapMode: Text.WordWrap
+        }
+
+        PanelSeparator {
+          width: parent.width
+          foreground: root.foreground
+        }
+
         Text {
           width: parent.width
           text: "space start or pause, s skip, r restart, o off"
@@ -282,6 +483,7 @@ Panel {
           color: root.dim
           wrapMode: Text.WordWrap
         }
+      }
       }
     }
   }
