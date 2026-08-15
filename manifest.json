@@ -1,0 +1,160 @@
+{
+  "schemaVersion": 1,
+  "id": "sterre.timers",
+  "name": "Timers",
+  "version": "0.1.0",
+  "author": "sterre-g",
+  "license": "MIT",
+  "description": "Pomodoro, 20-20-20 eye rest and stand-up reminders as configurable rules over one timer engine.",
+  "kinds": [
+    "service",
+    "bar-widget",
+    "overlay"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "Panel.qml",
+    "overlay": "Overlay.qml"
+  },
+  "barWidget": {
+    "displayName": "Timers",
+    "description": "Pomodoro plus break rules with a fullscreen break screen",
+    "category": "Time",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "sound": true,
+      "pomodoroWorkMinutes": 25,
+      "pomodoroBreakMinutes": 5,
+      "pomodoroLongBreakMinutes": 15,
+      "pomodoroCycle": 4,
+      "pomodoroAutostart": false,
+      "pomodoroBreakScreen": false,
+      "lookAwayEnabled": true,
+      "lookAwayEveryMinutes": 20,
+      "lookAwaySeconds": 20,
+      "lookAwayBreakScreen": true,
+      "standUpEnabled": true,
+      "standUpEveryMinutes": 50,
+      "standUpMinutes": 5,
+      "standUpBreakScreen": false
+    },
+    "schema": [
+      {
+        "key": "sound",
+        "type": "boolean",
+        "label": "Play a sound on every phase change",
+        "defaultValue": true
+      },
+      {
+        "key": "pomodoroWorkMinutes",
+        "type": "integer",
+        "label": "Pomodoro focus length (minutes)",
+        "min": 1,
+        "max": 180,
+        "step": 5,
+        "defaultValue": 25
+      },
+      {
+        "key": "pomodoroBreakMinutes",
+        "type": "integer",
+        "label": "Pomodoro short break (minutes)",
+        "min": 1,
+        "max": 60,
+        "step": 1,
+        "defaultValue": 5
+      },
+      {
+        "key": "pomodoroLongBreakMinutes",
+        "type": "integer",
+        "label": "Pomodoro long break (minutes)",
+        "min": 1,
+        "max": 120,
+        "step": 5,
+        "defaultValue": 15
+      },
+      {
+        "key": "pomodoroCycle",
+        "type": "integer",
+        "label": "Focus phases before a long break",
+        "min": 1,
+        "max": 12,
+        "step": 1,
+        "defaultValue": 4
+      },
+      {
+        "key": "pomodoroAutostart",
+        "type": "boolean",
+        "label": "Start the pomodoro when the shell starts",
+        "defaultValue": false
+      },
+      {
+        "key": "pomodoroBreakScreen",
+        "type": "boolean",
+        "label": "Show the fullscreen break screen for pomodoro breaks",
+        "defaultValue": false
+      },
+      {
+        "key": "lookAwayEnabled",
+        "type": "boolean",
+        "label": "Run the 20-20-20 eye rest rule",
+        "defaultValue": true
+      },
+      {
+        "key": "lookAwayEveryMinutes",
+        "type": "integer",
+        "label": "Look away every (minutes)",
+        "min": 1,
+        "max": 180,
+        "step": 5,
+        "defaultValue": 20
+      },
+      {
+        "key": "lookAwaySeconds",
+        "type": "integer",
+        "label": "Look away for (seconds)",
+        "min": 5,
+        "max": 600,
+        "step": 5,
+        "defaultValue": 20
+      },
+      {
+        "key": "lookAwayBreakScreen",
+        "type": "boolean",
+        "label": "Show the fullscreen break screen when looking away",
+        "defaultValue": true
+      },
+      {
+        "key": "standUpEnabled",
+        "type": "boolean",
+        "label": "Run the stand-up rule",
+        "defaultValue": true
+      },
+      {
+        "key": "standUpEveryMinutes",
+        "type": "integer",
+        "label": "Stand up every (minutes)",
+        "min": 1,
+        "max": 240,
+        "step": 5,
+        "defaultValue": 50
+      },
+      {
+        "key": "standUpMinutes",
+        "type": "integer",
+        "label": "Stand up for (minutes)",
+        "min": 1,
+        "max": 60,
+        "step": 1,
+        "defaultValue": 5
+      },
+      {
+        "key": "standUpBreakScreen",
+        "type": "boolean",
+        "label": "Show the fullscreen break screen when standing up",
+        "defaultValue": false
+      }
+    ]
+  }
+}
