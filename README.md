@@ -98,6 +98,9 @@ from the bar widget settings UI, or inline on the widget entry in
 
 Changing a duration applies from the next phase, not the running one.
 
+Sounds are off. Every transition raises a desktop notification either way; set
+`sound` to `true` if you also want the chime.
+
 ## How it works
 
 [Model.js](Model.js) is the whole engine and is pure: `tick(rule, runtime, now)`

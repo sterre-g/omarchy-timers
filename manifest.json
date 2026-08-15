@@ -24,7 +24,7 @@
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
-      "sound": true,
+      "sound": false,
       "pomodoroWorkMinutes": 25,
       "pomodoroBreakMinutes": 5,
       "pomodoroLongBreakMinutes": 15,
@@ -45,7 +45,7 @@
         "key": "sound",
         "type": "boolean",
         "label": "Play a sound on every phase change",
-        "defaultValue": true
+        "defaultValue": false
       },
       {
         "key": "pomodoroWorkMinutes",

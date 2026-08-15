@@ -233,7 +233,7 @@ Item {
                              "-u", note.urgency,
                              note.title, note.body])
 
-    if (Model.boolOr(root.settings.sound, true)) {
+    if (Model.boolOr(root.settings.sound, false)) {
       Quickshell.execDetached(["pw-play", event.phase === "break"
         ? "/usr/share/sounds/freedesktop/stereo/alarm-clock-elapsed.oga"
         : "/usr/share/sounds/freedesktop/stereo/complete.oga"])
