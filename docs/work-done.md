@@ -23,4 +23,4 @@
   them. A wall clock reminder tracks whether it fired today, and one more than
   ten minutes late is dropped rather than replayed on startup.
 - Parsing is one line of text rather than a four field form, which keeps the
-  whole thing in `Model.js` and under test: 37 assertions now.
+  whole thing in `Model.js` and under test: 33 assertions now.
