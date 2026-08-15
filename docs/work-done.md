@@ -12,3 +12,15 @@
   notification twice.
 - The panel opens on the focused monitor. The bar keeps one panel open shell
   wide, so opening on every monitor left it open on whichever answered last.
+
+## 2026-08-15 - presets and custom timers
+
+- `feat/presets-and-custom-timers`: whole minute focus presets written back to
+  the widget's shell.json entry, and user defined timers in two shapes, a wall
+  clock time (optionally weekdays only) or a repeating interval.
+- Custom timers and the rule countdowns persist to
+  `~/.local/state/omarchy/sterre-timers.json`, so a restart no longer loses
+  them. A wall clock reminder tracks whether it fired today, and one more than
+  ten minutes late is dropped rather than replayed on startup.
+- Parsing is one line of text rather than a four field form, which keeps the
+  whole thing in `Model.js` and under test: 37 assertions now.

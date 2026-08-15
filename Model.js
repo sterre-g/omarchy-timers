@@ -206,6 +206,198 @@ function notificationFor(event) {
   return { title: event.label, body: "Back to it, " + formatClock(event.seconds) + " to go", urgency: "low" }
 }
 
+
+// Whole minutes only, which is what a pomodoro length is ever expressed in.
+var POMODORO_PRESETS = [15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 90]
+
+var WEEKDAYS = [1, 2, 3, 4, 5]
+
+// A custom timer is written as one line, because a form with four fields for
+// "remind me at half two" is more UI than the idea deserves:
+//   Stretch at 14:30
+//   Standup at 09:45 weekdays
+//   Water every 45
+function parseCustom(text) {
+  var raw = String(text || "").trim().replace(/\s+/g, " ")
+  if (raw === "") return { ok: false, error: "Type something like: Stretch at 14:30" }
+
+  var atMatch = /^(.*?)\s+at\s+(\d{1,2}):(\d{2})(\s+weekdays)?$/i.exec(raw)
+  if (atMatch) {
+    var label = atMatch[1].trim()
+    var hours = Number(atMatch[2])
+    var minutes = Number(atMatch[3])
+    if (label === "") return { ok: false, error: "Give it a name, like: Stretch at 14:30" }
+    if (hours > 23) return { ok: false, error: "Hour has to be 0 to 23" }
+    if (minutes > 59) return { ok: false, error: "Minute has to be 0 to 59" }
+    return {
+      ok: true,
+      entry: {
+        kind: "at",
+        label: label,
+        atMinutes: hours * 60 + minutes,
+        weekdaysOnly: !!atMatch[4],
+        enabled: true
+      }
+    }
+  }
+
+  var everyMatch = /^(.*?)\s+every\s+(\d{1,4})(\s*m|\s*min|\s*mins|\s*minutes)?$/i.exec(raw)
+  if (everyMatch) {
+    var everyLabel = everyMatch[1].trim()
+    var everyMin = Number(everyMatch[2])
+    if (everyLabel === "") return { ok: false, error: "Give it a name, like: Water every 45" }
+    if (everyMin < 1) return { ok: false, error: "Interval has to be at least a minute" }
+    if (everyMin > 1440) return { ok: false, error: "Interval has to be a day or less" }
+    return {
+      ok: true,
+      entry: { kind: "every", label: everyLabel, everyMin: everyMin, enabled: true }
+    }
+  }
+
+  return { ok: false, error: "Try: Stretch at 14:30, or Water every 45" }
+}
+
+function pad2Local(n) {
+  return n < 10 ? "0" + n : String(n)
+}
+
+// Everything the schedule needs to know about now, so the rest stays pure.
+function clockFrom(date) {
+  return {
+    ms: date.getTime(),
+    minutes: date.getHours() * 60 + date.getMinutes(),
+    weekday: date.getDay(),
+    dayKey: date.getFullYear() + "-" + pad2Local(date.getMonth() + 1) + "-" + pad2Local(date.getDate())
+  }
+}
+
+function describeCustom(entry) {
+  if (!entry) return ""
+  if (entry.kind === "at") {
+    var hours = Math.floor(entry.atMinutes / 60)
+    var minutes = entry.atMinutes % 60
+    return "at " + pad2Local(hours) + ":" + pad2Local(minutes) + (entry.weekdaysOnly ? " on weekdays" : " daily")
+  }
+  return "every " + entry.everyMin + " min"
+}
+
+function runsToday(entry, clock) {
+  if (!entry.weekdaysOnly) return true
+  return WEEKDAYS.indexOf(clock.weekday) !== -1
+}
+
+// A wall clock reminder that is hours late is not a reminder any more, so a
+// shell started in the evening does not replay the whole day.
+var LATE_GRACE_MINUTES = 10
+
+function customTick(entry, runtime, clock) {
+  var state = runtime || {}
+  if (!entry || entry.enabled === false) return { runtime: state, event: null }
+
+  if (entry.kind === "every") {
+    if (!state.endsAt || state.endsAt > clock.ms + entry.everyMin * 60000) {
+      return { runtime: { endsAt: clock.ms + entry.everyMin * 60000 }, event: null }
+    }
+    if (clock.ms < state.endsAt) return { runtime: state, event: null }
+    return {
+      runtime: { endsAt: clock.ms + entry.everyMin * 60000 },
+      event: { label: entry.label, body: "Every " + entry.everyMin + " minutes" }
+    }
+  }
+
+  if (!runsToday(entry, clock)) return { runtime: state, event: null }
+  if (state.lastDay === clock.dayKey) return { runtime: state, event: null }
+  if (clock.minutes < entry.atMinutes) return { runtime: state, event: null }
+
+  var late = clock.minutes - entry.atMinutes
+  if (late > LATE_GRACE_MINUTES) {
+    return { runtime: { lastDay: clock.dayKey }, event: null }
+  }
+
+  return {
+    runtime: { lastDay: clock.dayKey },
+    event: { label: entry.label, body: describeCustom(entry) }
+  }
+}
+
+function nextDueText(entry, runtime, clock) {
+  if (!entry || entry.enabled === false) return "off"
+  if (entry.kind === "every") {
+    if (!runtime || !runtime.endsAt) return "starting"
+    return "in " + formatClock(Math.max(0, Math.ceil((runtime.endsAt - clock.ms) / 1000)))
+  }
+  if (!runsToday(entry, clock)) return "not today"
+  if (runtime && runtime.lastDay === clock.dayKey) return "done today"
+  var minutesAway = entry.atMinutes - clock.minutes
+  if (minutesAway <= 0) return "due"
+  if (minutesAway < 60) return "in " + minutesAway + " min"
+  return "in " + Math.floor(minutesAway / 60) + "h " + (minutesAway % 60) + "m"
+}
+
+function serializeState(customs, customRuntimes, ruleRuntimes) {
+  return {
+    version: 1,
+    customs: customs || [],
+    customRuntimes: customRuntimes || {},
+    ruleRuntimes: ruleRuntimes || {}
+  }
+}
+
+function parseState(raw) {
+  var data = null
+  try {
+    data = JSON.parse(String(raw || ""))
+  } catch (e) {
+    return serializeState([], {}, {})
+  }
+  if (!data || typeof data !== "object") return serializeState([], {}, {})
+
+  var customs = []
+  var list = Array.isArray(data.customs) ? data.customs : []
+  for (var i = 0; i < list.length; i++) {
+    var entry = list[i]
+    if (!entry || typeof entry !== "object") continue
+    if (entry.kind !== "at" && entry.kind !== "every") continue
+    if (!entry.label) continue
+    customs.push({
+      kind: entry.kind,
+      label: String(entry.label),
+      atMinutes: clampInt(entry.atMinutes, 0, 0, 1439),
+      everyMin: clampInt(entry.everyMin, 30, 1, 1440),
+      weekdaysOnly: entry.weekdaysOnly === true,
+      enabled: entry.enabled !== false
+    })
+  }
+
+  return serializeState(customs,
+    data.customRuntimes && typeof data.customRuntimes === "object" ? data.customRuntimes : {},
+    data.ruleRuntimes && typeof data.ruleRuntimes === "object" ? data.ruleRuntimes : {})
+}
+
+// A runtime restored from disk is only useful if it still points at the
+// future; anything older belongs to a session that has already ended.
+function restoreRuleRuntime(rule, stored, nowMs) {
+  if (!stored || typeof stored !== "object") return null
+  if (stored.phase !== "work" && stored.phase !== "break") return null
+  if (!stored.running) {
+    return {
+      phase: stored.phase,
+      running: false,
+      endsAt: 0,
+      remainingSec: clampInt(stored.remainingSec, 0, 0, 86400),
+      completed: clampInt(stored.completed, 0, 0, 10000)
+    }
+  }
+  if (!(Number(stored.endsAt) > nowMs)) return null
+  return {
+    phase: stored.phase,
+    running: true,
+    endsAt: Number(stored.endsAt),
+    remainingSec: Math.ceil((Number(stored.endsAt) - nowMs) / 1000),
+    completed: clampInt(stored.completed, 0, 0, 10000)
+  }
+}
+
 if (typeof module !== "undefined" && module.exports) {
   module.exports = {
     MINUTE: MINUTE,
@@ -227,6 +419,16 @@ if (typeof module !== "undefined" && module.exports) {
     phaseText: phaseText,
     nextDue: nextDue,
     summary: summary,
-    notificationFor: notificationFor
+    notificationFor: notificationFor,
+    POMODORO_PRESETS: POMODORO_PRESETS,
+    parseCustom: parseCustom,
+    clockFrom: clockFrom,
+    describeCustom: describeCustom,
+    runsToday: runsToday,
+    customTick: customTick,
+    nextDueText: nextDueText,
+    serializeState: serializeState,
+    parseState: parseState,
+    restoreRuleRuntime: restoreRuleRuntime
   }
 }

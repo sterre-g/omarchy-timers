@@ -10,6 +10,11 @@ Item {
   property var shell: null
   property var manifest: null
 
+  readonly property string statePath: (Quickshell.env("HOME") || "") + "/.local/state/omarchy/sterre-timers.json"
+  property var customs: []
+  property var customRuntimes: ({})
+  property bool stateLoaded: false
+
   property var settings: ({})
   property string settingsKey: ""
   property var rules: Model.buildRules(root.settings)
@@ -79,6 +84,86 @@ Item {
     if (widget && typeof widget[method] === "function") widget[method]()
   }
 
+  // Custom timers and the rule countdowns are written to disk, so a shell
+  // restart does not lose a reminder you set this morning.
+  function persist() {
+    if (!root.stateLoaded) return
+    stateFile.setText(JSON.stringify(
+      Model.serializeState(root.customs, root.customRuntimes, root.runtimes), null, 2) + "\n")
+  }
+
+  function loadState(raw) {
+    var state = Model.parseState(raw)
+    root.customs = state.customs
+    root.customRuntimes = state.customRuntimes
+    root.stateLoaded = true
+    root.restoreRules(state.ruleRuntimes)
+  }
+
+  function restoreRules(stored) {
+    var now = Date.now()
+    var next = {}
+    var changed = false
+    for (var i = 0; i < root.rules.length; i++) {
+      var rule = root.rules[i]
+      var restored = Model.restoreRuleRuntime(rule, stored ? stored[rule.id] : null, now)
+      if (restored) {
+        next[rule.id] = restored
+        changed = true
+      } else {
+        next[rule.id] = root.runtimes[rule.id] || Model.idleRuntime()
+      }
+    }
+    if (changed) root.runtimes = next
+  }
+
+  function addCustom(text) {
+    var parsed = Model.parseCustom(text)
+    if (!parsed.ok) return parsed
+    var next = root.customs.slice()
+    next.push(parsed.entry)
+    root.customs = next
+    root.persist()
+    return parsed
+  }
+
+  function removeCustom(index) {
+    if (index < 0 || index >= root.customs.length) return
+    var next = root.customs.slice()
+    next.splice(index, 1)
+    root.customs = next
+    var runtimes = {}
+    for (var key in root.customRuntimes) {
+      var n = Number(key)
+      if (n === index) continue
+      runtimes[n > index ? n - 1 : n] = root.customRuntimes[key]
+    }
+    root.customRuntimes = runtimes
+    root.persist()
+  }
+
+  function toggleCustom(index) {
+    if (index < 0 || index >= root.customs.length) return
+    var next = root.customs.slice()
+    var copy = {}
+    for (var key in next[index]) copy[key] = next[index][key]
+    copy.enabled = copy.enabled === false
+    next[index] = copy
+    root.customs = next
+    root.persist()
+  }
+
+  function customSummary() {
+    if (root.customs.length === 0) return "no custom timers"
+    var clock = Model.clockFrom(new Date())
+    var lines = []
+    for (var i = 0; i < root.customs.length; i++) {
+      lines.push(root.customs[i].label + ": " + Model.describeCustom(root.customs[i])
+        + ", " + Model.nextDueText(root.customs[i], root.customRuntimes[i], clock))
+    }
+    return lines.join("\n")
+  }
+
   function runtimeFor(id) {
     var rt = root.runtimes[id]
     return rt ? rt : Model.idleRuntime()
@@ -96,6 +181,7 @@ Item {
     for (var key in root.runtimes) next[key] = root.runtimes[key]
     next[id] = runtime
     root.runtimes = next
+    root.persist()
   }
 
   function syncRuntimes() {
@@ -182,7 +268,45 @@ Item {
       next[rule.id] = out.runtime
       root.announce(out.event)
     }
-    if (next !== null) root.runtimes = next
+    if (next !== null) {
+      root.runtimes = next
+      root.persist()
+    }
+
+    root.tickCustoms()
+  }
+
+  function tickCustoms() {
+    if (root.customs.length === 0) return
+    var clock = Model.clockFrom(new Date())
+    var next = null
+
+    for (var i = 0; i < root.customs.length; i++) {
+      var out = Model.customTick(root.customs[i], root.customRuntimes[i], clock)
+      if (out.runtime === root.customRuntimes[i]) continue
+      if (next === null) {
+        next = {}
+        for (var key in root.customRuntimes) next[key] = root.customRuntimes[key]
+      }
+      next[i] = out.runtime
+      if (out.event) {
+        Quickshell.execDetached([root.resolvedOmarchyPath() + "/bin/omarchy-notification-send",
+                                 "-g", "\uf017", "-u", "normal", out.event.label, out.event.body])
+      }
+    }
+
+    if (next !== null) {
+      root.customRuntimes = next
+      root.persist()
+    }
+  }
+
+  FileView {
+    id: stateFile
+    path: root.statePath
+    printErrors: false
+    onLoaded: root.loadState(text())
+    onLoadFailed: root.loadState("")
   }
 
   onRulesChanged: root.syncRuntimes()
@@ -211,6 +335,26 @@ Item {
     function close(): void { root.eachWidget("close") }
     function toggle(): void { root.callFocused("toggle") }
     function status(): string { return Model.summary(root.rules, root.runtimes, Date.now()) }
+    function customs(): string { return root.customSummary() }
+    function focus(minutes: string): string {
+      var n = Math.round(Number(minutes))
+      if (!isFinite(n) || n < 1 || n > 180) return "focus length has to be 1 to 180 whole minutes"
+      var widget = root.focusedWidget()
+      if (!widget || typeof widget.setPomodoroMinutes !== "function") return "no widget to ask"
+      widget.setPomodoroMinutes(n)
+      return "focus length " + n + " min"
+    }
+    function add(text: string): string {
+      var result = root.addCustom(text)
+      return result.ok ? "added " + result.entry.label + " " + Model.describeCustom(result.entry) : result.error
+    }
+    function remove(index: string): string {
+      var n = Number(index)
+      if (!isFinite(n) || n < 1 || n > root.customs.length) return "no custom timer " + index
+      var label = root.customs[n - 1].label
+      root.removeCustom(n - 1)
+      return "removed " + label
+    }
     function start(id: string): string {
       if (!root.ruleById(id)) return "unknown rule: " + id
       root.resetRule(id)

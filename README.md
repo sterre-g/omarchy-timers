@@ -13,6 +13,8 @@ and one widget in the bar instead of three.
 | Stand up | every 50 min | 5 min | off |
 
 Pomodoro is off until you start it. The two health rules start with the shell.
+On top of those three you can add your own timers, which is what the panel's
+bottom half is for.
 
 ## Install
 
@@ -41,6 +43,32 @@ while a break is running, and its tooltip lists all three rules.
 - The break screen takes over the display and dismisses on any key or click,
   or when the break runs out.
 
+### Focus length
+
+The panel has a row of preset lengths, whole minutes, from 15 up to 90. Picking
+one writes it into this widget's own entry in `~/.config/omarchy/shell.json`,
+so it is still your focus length after a restart.
+
+### Custom timers
+
+Add your own reminders in the field at the bottom of the panel. One line each,
+in either of two shapes:
+
+```
+Stretch at 14:30              a wall clock time, every day
+Standup at 09:45 weekdays     the same, Monday to Friday only
+Water every 45                a repeating interval, in minutes
+```
+
+They are written to `~/.local/state/omarchy/sterre-timers.json`, so they
+survive a shell restart and a reboot. A wall clock reminder knows whether it
+already fired today, so it does not repeat itself, and one that is more than
+ten minutes late is dropped rather than replayed: a shell started at nine in
+the evening should not fire this morning's reminders at you.
+
+The running rules are saved there too, so a restart picks a countdown up where
+it left off instead of starting it over.
+
 From a script or a keybinding:
 
 ```sh
@@ -52,6 +80,10 @@ omarchy-shell sterre.timers resume stand-up
 omarchy-shell sterre.timers stop stand-up
 omarchy-shell sterre.timers open                # panel, on the focused monitor
 omarchy-shell sterre.timers toggle
+omarchy-shell sterre.timers focus 35            # focus length, whole minutes
+omarchy-shell sterre.timers add "Water every 45"
+omarchy-shell sterre.timers customs             # list them with their next due time
+omarchy-shell sterre.timers remove 1
 ```
 
 ## Settings
@@ -86,10 +118,11 @@ keeps at most one panel open shell wide.
 
 Two things worth knowing:
 
-- Timer state lives in the shell process. `omarchy restart shell` restarts every
-  running rule from the beginning.
 - A tick advances one phase at a time. If the shell is suspended over several
   break intervals you get one notification on wake, not a queue of them.
+- A countdown restored from disk is only trusted while it still points at the
+  future. Anything older belonged to a session that has already ended, so the
+  rule starts fresh rather than firing immediately.
 
 There is no idle detection yet, so a rule that comes due while you are away from
 the keyboard still fires.

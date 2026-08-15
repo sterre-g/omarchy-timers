@@ -214,4 +214,173 @@ run("notifications name the actual break", () => {
   assert.match(back.body, /25:00 to go/)
 })
 
+function clockAt(text, weekday) {
+  // text is "YYYY-MM-DD HH:MM"
+  const [datePart, timePart] = text.split(" ")
+  const [y, m, d] = datePart.split("-").map(Number)
+  const [hh, mm] = timePart.split(":").map(Number)
+  const date = new Date(y, m - 1, d, hh, mm, 0, 0)
+  const clock = M.clockFrom(date)
+  if (weekday !== undefined) clock.weekday = weekday
+  return clock
+}
+
+run("pomodoro presets are whole minutes and cover the usual lengths", () => {
+  assert.ok(M.POMODORO_PRESETS.includes(20))
+  assert.ok(M.POMODORO_PRESETS.includes(35))
+  assert.ok(M.POMODORO_PRESETS.includes(50))
+  assert.ok(M.POMODORO_PRESETS.includes(55))
+  for (const preset of M.POMODORO_PRESETS) {
+    assert.equal(preset, Math.round(preset), "preset must be whole minutes: " + preset)
+    assert.ok(preset >= 1 && preset <= 180)
+  }
+})
+
+run("a custom timer can be written as a wall clock time", () => {
+  const parsed = M.parseCustom("Stretch at 14:30")
+  assert.equal(parsed.ok, true)
+  assert.deepEqual(parsed.entry, { kind: "at", label: "Stretch", atMinutes: 870, weekdaysOnly: false, enabled: true })
+
+  const weekdays = M.parseCustom("Standup at 09:45 weekdays")
+  assert.equal(weekdays.entry.weekdaysOnly, true)
+  assert.equal(weekdays.entry.atMinutes, 585)
+
+  const multiword = M.parseCustom("Take the bins out at 07:05")
+  assert.equal(multiword.entry.label, "Take the bins out")
+})
+
+run("a custom timer can be written as an interval", () => {
+  assert.deepEqual(M.parseCustom("Water every 45").entry,
+    { kind: "every", label: "Water", everyMin: 45, enabled: true })
+  assert.equal(M.parseCustom("Water every 45 min").entry.everyMin, 45)
+  assert.equal(M.parseCustom("Water every 90 minutes").entry.everyMin, 90)
+})
+
+run("nonsense and out of range values are refused with a hint", () => {
+  for (const bad of ["", "   ", "nonsense", "at 14:30", "every 45", "Stretch at 25:00", "Stretch at 10:70", "Water every 0", "Water every 5000"]) {
+    const parsed = M.parseCustom(bad)
+    assert.equal(parsed.ok, false, "should refuse: " + bad)
+    assert.ok(parsed.error.length > 0)
+  }
+})
+
+run("an interval timer counts down and reschedules itself", () => {
+  const entry = M.parseCustom("Water every 45").entry
+  const start = clockAt("2026-08-15 09:00")
+
+  const first = M.customTick(entry, null, start)
+  assert.equal(first.event, null)
+  assert.equal(first.runtime.endsAt, start.ms + 45 * 60000)
+
+  const before = M.customTick(entry, first.runtime, clockAt("2026-08-15 09:44"))
+  assert.equal(before.event, null)
+
+  const due = M.customTick(entry, first.runtime, clockAt("2026-08-15 09:45"))
+  assert.notEqual(due.event, null)
+  assert.equal(due.event.label, "Water")
+  assert.equal(due.runtime.endsAt, clockAt("2026-08-15 09:45").ms + 45 * 60000)
+})
+
+run("a wall clock timer fires once and then not again that day", () => {
+  const entry = M.parseCustom("Stretch at 14:30").entry
+  let runtime = null
+
+  assert.equal(M.customTick(entry, runtime, clockAt("2026-08-15 14:29")).event, null)
+
+  const fired = M.customTick(entry, runtime, clockAt("2026-08-15 14:30"))
+  assert.notEqual(fired.event, null)
+  assert.equal(fired.event.label, "Stretch")
+  runtime = fired.runtime
+
+  assert.equal(M.customTick(entry, runtime, clockAt("2026-08-15 14:31")).event, null)
+  assert.equal(M.customTick(entry, runtime, clockAt("2026-08-15 20:00")).event, null)
+})
+
+run("the same timer fires again the next day", () => {
+  const entry = M.parseCustom("Stretch at 14:30").entry
+  const runtime = M.customTick(entry, null, clockAt("2026-08-15 14:30")).runtime
+  const nextDay = M.customTick(entry, runtime, clockAt("2026-08-16 14:30"))
+  assert.notEqual(nextDay.event, null)
+})
+
+run("a reminder hours late is dropped rather than replayed on startup", () => {
+  const entry = M.parseCustom("Stretch at 09:00").entry
+  const late = M.customTick(entry, null, clockAt("2026-08-15 23:00"))
+  assert.equal(late.event, null, "should not fire fourteen hours late")
+  assert.equal(late.runtime.lastDay, "2026-08-15", "and should not fire later either")
+
+  const slightlyLate = M.customTick(entry, null, clockAt("2026-08-15 09:07"))
+  assert.notEqual(slightlyLate.event, null, "seven minutes late is still a reminder")
+})
+
+run("weekday only timers stay quiet at the weekend", () => {
+  const entry = M.parseCustom("Standup at 09:45 weekdays").entry
+  const sunday = clockAt("2026-08-16 09:45", 0)
+  const monday = clockAt("2026-08-17 09:45", 1)
+
+  assert.equal(M.runsToday(entry, sunday), false)
+  assert.equal(M.customTick(entry, null, sunday).event, null)
+  assert.equal(M.runsToday(entry, monday), true)
+  assert.notEqual(M.customTick(entry, null, monday).event, null)
+})
+
+run("a disabled timer never fires", () => {
+  const entry = Object.assign(M.parseCustom("Water every 1").entry, { enabled: false })
+  assert.equal(M.customTick(entry, { endsAt: 0 }, clockAt("2026-08-15 09:00")).event, null)
+})
+
+run("schedules describe themselves in words", () => {
+  assert.equal(M.describeCustom(M.parseCustom("Stretch at 14:30").entry), "at 14:30 daily")
+  assert.equal(M.describeCustom(M.parseCustom("Standup at 09:05 weekdays").entry), "at 09:05 on weekdays")
+  assert.equal(M.describeCustom(M.parseCustom("Water every 45").entry), "every 45 min")
+  assert.equal(M.describeCustom(null), "")
+})
+
+run("the next due readout is human sized", () => {
+  const at = M.parseCustom("Stretch at 14:30").entry
+  assert.equal(M.nextDueText(at, null, clockAt("2026-08-15 14:00")), "in 30 min")
+  assert.equal(M.nextDueText(at, null, clockAt("2026-08-15 09:00")), "in 5h 30m")
+  assert.equal(M.nextDueText(at, { lastDay: "2026-08-15" }, clockAt("2026-08-15 15:00")), "done today")
+  assert.equal(M.nextDueText(Object.assign({}, at, { enabled: false }), null, clockAt("2026-08-15 09:00")), "off")
+
+  const every = M.parseCustom("Water every 45").entry
+  const clock = clockAt("2026-08-15 09:00")
+  assert.equal(M.nextDueText(every, null, clock), "starting")
+  assert.match(M.nextDueText(every, { endsAt: clock.ms + 60000 }, clock), /^in 1:00$/)
+})
+
+run("state survives a round trip and rubbish is discarded", () => {
+  const customs = [M.parseCustom("Stretch at 14:30").entry, M.parseCustom("Water every 45").entry]
+  const state = M.serializeState(customs, { "0": { lastDay: "2026-08-15" } }, { pomodoro: { phase: "work" } })
+  const back = M.parseState(JSON.stringify(state))
+  assert.equal(back.customs.length, 2)
+  assert.equal(back.customs[0].label, "Stretch")
+  assert.equal(back.customRuntimes["0"].lastDay, "2026-08-15")
+
+  const broken = M.parseState("not json at all")
+  assert.deepEqual(broken.customs, [])
+
+  const partial = M.parseState(JSON.stringify({ customs: [{ kind: "nope" }, { label: "no kind" }, null, 7] }))
+  assert.deepEqual(partial.customs, [])
+})
+
+run("a stored rule runtime is restored only while it still points at the future", () => {
+  const rule = M.buildRules({}).find(r => r.id === "look-away")
+  const now = 1700000000000
+
+  const live = M.restoreRuleRuntime(rule, { phase: "work", running: true, endsAt: now + 60000, completed: 2 }, now)
+  assert.equal(live.running, true)
+  assert.equal(live.remainingSec, 60)
+  assert.equal(live.completed, 2)
+
+  assert.equal(M.restoreRuleRuntime(rule, { phase: "work", running: true, endsAt: now - 1, completed: 2 }, now), null)
+  assert.equal(M.restoreRuleRuntime(rule, { phase: "idle" }, now), null)
+  assert.equal(M.restoreRuleRuntime(rule, null, now), null)
+
+  const paused = M.restoreRuleRuntime(rule, { phase: "break", running: false, remainingSec: 12, completed: 1 }, now)
+  assert.equal(paused.running, false)
+  assert.equal(paused.remainingSec, 12)
+})
+
+
 process.stdout.write("\nall Model.js tests passed\n")
