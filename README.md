@@ -2,7 +2,7 @@
 
 Pomodoro, 20-20-20 eye rest and stand-up reminders in one Omarchy bar widget.
 
-![The panel, with the three rules running and the focus length picker below them](screenshot.png)
+![The panel, with the three rules running and the focus length picker below them](preview.png)
 
 All three are the same thing underneath: a rule that alternates a work phase
 with a break phase. One engine runs them, so there is one place to fix a bug
