@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "id": "sterre.timers",
   "name": "Timers",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "sterre-g",
   "license": "MIT",
-  "description": "Pomodoro, 20-20-20 eye rest and stand-up reminders as configurable rules over one timer engine.",
+  "description": "Pomodoro, water, 20-20-20 eye rest and stand-up as removable defaults over one timer engine, plus your own one-line reminders.",
   "kinds": [
     "service",
     "bar-widget",
@@ -19,7 +19,7 @@
   },
   "barWidget": {
     "displayName": "Timers",
-    "description": "Pomodoro plus break rules with a fullscreen break screen",
+    "description": "Removable default timers plus custom reminders, with a fullscreen break screen",
     "category": "Time",
     "allowMultiple": false,
     "defaultSection": "right",
@@ -31,6 +31,10 @@
       "pomodoroCycle": 4,
       "pomodoroAutostart": false,
       "pomodoroBreakScreen": false,
+      "waterEnabled": true,
+      "waterEveryMinutes": 45,
+      "waterSeconds": 30,
+      "waterBreakScreen": false,
       "lookAwayEnabled": true,
       "lookAwayEveryMinutes": 20,
       "lookAwaySeconds": 20,
@@ -93,6 +97,36 @@
         "key": "pomodoroBreakScreen",
         "type": "boolean",
         "label": "Show the fullscreen break screen for pomodoro breaks",
+        "defaultValue": false
+      },
+      {
+        "key": "waterEnabled",
+        "type": "boolean",
+        "label": "Run the water rule",
+        "defaultValue": true
+      },
+      {
+        "key": "waterEveryMinutes",
+        "type": "integer",
+        "label": "Drink water every (minutes)",
+        "min": 1,
+        "max": 240,
+        "step": 5,
+        "defaultValue": 45
+      },
+      {
+        "key": "waterSeconds",
+        "type": "integer",
+        "label": "Water break length (seconds)",
+        "min": 5,
+        "max": 600,
+        "step": 5,
+        "defaultValue": 30
+      },
+      {
+        "key": "waterBreakScreen",
+        "type": "boolean",
+        "label": "Show the fullscreen break screen for water breaks",
         "defaultValue": false
       },
       {

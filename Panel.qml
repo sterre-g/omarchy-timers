@@ -25,6 +25,7 @@ Panel {
   // same shell state the lookup reads, which a binding turns into a loop.
   property var service: null
   readonly property var rules: root.service ? root.service.rules : []
+  readonly property var restorable: root.service ? root.service.restorableRules : []
   readonly property var runtimes: root.service ? root.service.runtimes : ({})
   readonly property double nowMs: root.service ? root.service.nowMs : 0
   readonly property string barText: root.service ? root.service.barText : ""
@@ -91,6 +92,10 @@ Panel {
     if (index < 0 || index >= root.rules.length) return null
     return root.rules[index]
   }
+
+  // Removing a rule shortens the list under the cursor, which would otherwise
+  // keep pointing past the end and make every key a no-op.
+  onRulesChanged: root.cursorIndex = Math.max(0, Math.min(root.rules.length - 1, root.cursorIndex))
 
   function moveCursor(dx, dy) {
     root.cursorActive = true
@@ -165,6 +170,7 @@ Panel {
         if (t === "s" || t === "S") root.service.skipRule(rule.id)
         else if (t === "r" || t === "R") root.service.resetRule(rule.id)
         else if (t === "o" || t === "O") root.service.stopRule(rule.id)
+        else if (t === "x" || t === "X") root.service.removeRule(rule.id)
       }
 
       Flickable {
@@ -267,6 +273,14 @@ Panel {
                   fontFamily: root.fontFamily
                   onClicked: if (root.service) root.service.resetRule(row.modelData.id)
                 }
+
+                PanelActionButton {
+                  iconText: "\uf00d"
+                  tooltipText: "Remove from this list"
+                  foreground: root.foreground
+                  fontFamily: root.fontFamily
+                  onClicked: if (root.service) root.service.removeRule(row.modelData.id)
+                }
               }
 
               Text {
@@ -307,6 +321,37 @@ Panel {
                   elide: Text.ElideRight
                 }
               }
+            }
+          }
+        }
+
+        Text {
+          width: parent.width
+          visible: root.rules.length === 0
+          text: "No timers. Add one of the defaults back below, or write your own further down."
+          font.family: root.fontFamily
+          font.pixelSize: Style.font.caption
+          color: root.dim
+          wrapMode: Text.WordWrap
+        }
+
+        Flow {
+          width: parent.width
+          spacing: Style.spacing.xs
+          visible: root.restorable.length > 0
+
+          Repeater {
+            model: root.restorable
+
+            Button {
+              required property var modelData
+
+              text: modelData.glyph + "  " + modelData.label
+              bordered: true
+              foreground: root.dim
+              fontFamily: root.fontFamily
+              fontSize: Style.font.caption
+              onClicked: if (root.service) root.service.restoreRule(modelData.id)
             }
           }
         }
@@ -477,7 +522,7 @@ Panel {
 
         Text {
           width: parent.width
-          text: "space start or pause, s skip, r restart, o off"
+          text: "space start or pause, s skip, r restart, o off, x remove"
           font.family: root.fontFamily
           font.pixelSize: Style.font.caption
           color: root.dim

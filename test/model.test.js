@@ -14,7 +14,7 @@ function run(name, fn) {
 
 run("defaults match the documented rules", () => {
   const rules = M.buildRules({})
-  assert.deepEqual(rules.map(r => r.id), ["pomodoro", "look-away", "stand-up"])
+  assert.deepEqual(rules.map(r => r.id), ["pomodoro", "water", "look-away", "stand-up"])
   assert.equal(ruleById("pomodoro").workSec, 25 * 60)
   assert.equal(ruleById("pomodoro").breakSec, 5 * 60)
   assert.equal(ruleById("pomodoro").longBreakSec, 15 * 60)
@@ -23,6 +23,37 @@ run("defaults match the documented rules", () => {
   assert.equal(ruleById("look-away").breakSec, 20)
   assert.equal(ruleById("stand-up").workSec, 50 * 60)
   assert.equal(ruleById("stand-up").breakSec, 5 * 60)
+  assert.equal(ruleById("water").workSec, 45 * 60)
+  assert.equal(ruleById("water").breakSec, 30)
+})
+
+// Every default is a default, not a fixture: the panel can drop any of them and
+// the state file remembers which, so nothing is mandatory.
+run("a removed rule disappears and can be brought back", () => {
+  const kept = M.buildRules({}, ["water", "stand-up"])
+  assert.deepEqual(kept.map(r => r.id), ["pomodoro", "look-away"])
+
+  const gone = M.removedRules({}, ["water", "stand-up"])
+  assert.deepEqual(gone.map(r => r.id), ["water", "stand-up"])
+  assert.equal(gone[0].label, "Water")
+
+  assert.deepEqual(M.buildRules({}, M.DEFAULT_RULE_IDS).map(r => r.id), [])
+  assert.deepEqual(M.buildRules({}, []).map(r => r.id), M.DEFAULT_RULE_IDS)
+  assert.deepEqual(M.buildRules({}).map(r => r.id), M.DEFAULT_RULE_IDS)
+})
+
+run("removed ids are sanitised so an edited state file cannot strand a rule", () => {
+  assert.deepEqual(M.sanitizeRemoved(["water", "water", "nonsense", 7, null]), ["water"])
+  assert.deepEqual(M.sanitizeRemoved("water"), [])
+  assert.deepEqual(M.sanitizeRemoved(undefined), [])
+})
+
+run("the removed list survives a save and load", () => {
+  const state = M.serializeState([], {}, {}, ["stand-up", "bogus"])
+  assert.deepEqual(state.removedRules, ["stand-up"])
+  assert.deepEqual(M.parseState(JSON.stringify(state)).removedRules, ["stand-up"])
+  assert.deepEqual(M.parseState("not json at all").removedRules, [])
+  assert.deepEqual(M.parseState(JSON.stringify({ customs: [] })).removedRules, [])
 })
 
 run("settings override and clamp out of range values", () => {
@@ -39,6 +70,8 @@ run("break rules default on, pomodoro defaults off", () => {
   assert.equal(ruleById("stand-up").autostart, true)
   assert.equal(ruleById("pomodoro").autostart, false)
   assert.equal(ruleById("look-away", { lookAwayEnabled: false }).autostart, false)
+  assert.equal(ruleById("water").autostart, true)
+  assert.equal(ruleById("water", { waterEnabled: false }).autostart, false)
   assert.equal(ruleById("pomodoro", { pomodoroAutostart: true }).autostart, true)
 })
 
@@ -46,6 +79,13 @@ run("only the look-away rule shows a break screen by default", () => {
   assert.equal(ruleById("look-away").breakScreen, true)
   assert.equal(ruleById("stand-up").breakScreen, false)
   assert.equal(ruleById("pomodoro").breakScreen, false)
+  assert.equal(ruleById("water").breakScreen, false)
+})
+
+run("water says what to do rather than how long the break is", () => {
+  const rule = ruleById("water")
+  const out = M.tick(rule, M.start(rule, T0), T0 + 45 * 60 * 1000)
+  assert.equal(M.notificationFor(out.event).body, "Drink some water")
 })
 
 run("a fresh start begins a work phase", () => {
@@ -194,9 +234,14 @@ run("summary reports every rule", () => {
   const rules = M.buildRules({})
   const runtimes = { "look-away": M.start(ruleById("look-away"), T0) }
   const lines = M.summary(rules, runtimes, T0).split("\n")
-  assert.equal(lines.length, 3)
+  assert.equal(lines.length, 4)
   assert.equal(lines[0], "Pomodoro: off")
-  assert.equal(lines[1], "Look away: next break in 20:00")
+  assert.equal(lines[1], "Water: off")
+  assert.equal(lines[2], "Look away: next break in 20:00")
+
+  // A removed rule is not "off", it is not there at all.
+  const trimmed = M.summary(M.buildRules({}, ["water", "pomodoro"]), runtimes, T0).split("\n")
+  assert.deepEqual(trimmed, ["Look away: next break in 20:00", "Stand up: off"])
 })
 
 run("notifications name the actual break", () => {

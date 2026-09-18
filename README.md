@@ -1,22 +1,29 @@
 # omarchy-timers
 
-Pomodoro, 20-20-20 eye rest and stand-up reminders in one Omarchy bar widget.
+Pomodoro, water, 20-20-20 eye rest and stand-up reminders in one Omarchy bar
+widget.
 
-![The panel, with the three rules running and the focus length picker below them](preview.png)
+![The panel, with the rules running and the focus length picker below them](preview.png)
 
-All three are the same thing underneath: a rule that alternates a work phase
+They are all the same thing underneath: a rule that alternates a work phase
 with a break phase. One engine runs them, so there is one place to fix a bug
-and one widget in the bar instead of three.
+and one widget in the bar instead of four.
 
 | Rule | Default | Break | Break screen |
 |---|---|---|---|
 | Pomodoro | 25 min focus | 5 min, 15 min every 4th | off |
+| Water | every 45 min | 30 s | off |
 | Look away | every 20 min | 20 s | on |
 | Stand up | every 50 min | 5 min | off |
 
-Pomodoro is off until you start it. The two health rules start with the shell.
-On top of those three you can add your own timers, which is what the panel's
-bottom half is for.
+Pomodoro is off until you start it. The three health rules start with the shell.
+
+**None of them is mandatory.** Each row has a remove button next to its skip
+and restart buttons (`x` on the keyboard) that takes the rule out of the list,
+and the buttons underneath put back the ones you removed. The choice lives in
+`~/.local/state/omarchy/sterre-timers.json`, so a rule you deleted stays
+deleted across restarts. Remove all four and the widget is nothing but your own
+timers, which is what the panel's bottom half is for.
 
 ## Install
 
@@ -37,11 +44,11 @@ omarchy plugin enable sterre.timers --section right --after omarchy.clock
 
 The bar button shows the time left on whichever rule is due next: minutes when
 more than a minute remains, seconds below that. It turns the urgent colour
-while a break is running, and its tooltip lists all three rules.
+while a break is running, and its tooltip lists every rule you kept.
 
 - Left click opens the panel, right click pauses or resumes the due rule.
 - In the panel: `space` start or pause, `s` skip the current phase, `r` restart
-  the rule, `o` turn it off, `Esc` close.
+  the rule, `o` turn it off, `x` remove it from the list, `Esc` close.
 - The break screen takes over the display and dismisses on any key or click,
   or when the break runs out.
 
@@ -74,7 +81,7 @@ it left off instead of starting it over.
 From a script or a keybinding:
 
 ```sh
-omarchy-shell sterre.timers status              # all three rules, one line each
+omarchy-shell sterre.timers status              # every rule you kept, one line each
 omarchy-shell sterre.timers start look-away     # also restarts a running rule
 omarchy-shell sterre.timers skip pomodoro
 omarchy-shell sterre.timers pause stand-up
@@ -86,6 +93,8 @@ omarchy-shell sterre.timers focus 35            # focus length, whole minutes
 omarchy-shell sterre.timers add "Water every 45"
 omarchy-shell sterre.timers customs             # list them with their next due time
 omarchy-shell sterre.timers remove 1
+omarchy-shell sterre.timers drop water          # take a default rule off the list
+omarchy-shell sterre.timers restore water       # and put it back
 ```
 
 ## Settings
@@ -95,10 +104,14 @@ from the bar widget settings UI, or inline on the widget entry in
 `~/.config/omarchy/shell.json`:
 
 ```json
-{ "id": "sterre.timers", "lookAwayEveryMinutes": 30, "standUpEnabled": false }
+{ "id": "sterre.timers", "lookAwayEveryMinutes": 30, "waterEveryMinutes": 60 }
 ```
 
 Changing a duration applies from the next phase, not the running one.
+
+`<rule>Enabled` only decides whether a rule starts itself with the shell. The
+rule is still listed and you can start it by hand. Removing it takes it out of
+the list altogether, and that choice lives in the state file, not here.
 
 Sounds are off. Every transition raises a desktop notification either way; set
 `sound` to `true` if you also want the chime.

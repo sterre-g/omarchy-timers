@@ -13,11 +13,13 @@ Item {
   readonly property string statePath: (Quickshell.env("HOME") || "") + "/.local/state/omarchy/sterre-timers.json"
   property var customs: []
   property var customRuntimes: ({})
+  property var removedRules: []
   property bool stateLoaded: false
 
   property var settings: ({})
   property string settingsKey: ""
-  property var rules: Model.buildRules(root.settings)
+  property var rules: Model.buildRules(root.settings, root.removedRules)
+  readonly property var restorableRules: Model.removedRules(root.settings, root.removedRules)
   property var runtimes: ({})
   property double nowMs: Date.now()
 
@@ -89,13 +91,15 @@ Item {
   function persist() {
     if (!root.stateLoaded) return
     stateFile.setText(JSON.stringify(
-      Model.serializeState(root.customs, root.customRuntimes, root.runtimes), null, 2) + "\n")
+      Model.serializeState(root.customs, root.customRuntimes, root.runtimes, root.removedRules),
+      null, 2) + "\n")
   }
 
   function loadState(raw) {
     var state = Model.parseState(raw)
     root.customs = state.customs
     root.customRuntimes = state.customRuntimes
+    root.removedRules = state.removedRules
     root.stateLoaded = true
     root.restoreRules(state.ruleRuntimes)
   }
@@ -115,6 +119,30 @@ Item {
       }
     }
     if (changed) root.runtimes = next
+  }
+
+  // Removing a rule drops its countdown with it, so restoring one later starts
+  // it fresh rather than resuming a phase that ended hours ago.
+  function removeRule(id) {
+    if (Model.DEFAULT_RULE_IDS.indexOf(id) === -1 || root.removedRules.indexOf(id) !== -1) return
+    var next = root.removedRules.slice()
+    next.push(id)
+    root.removedRules = next
+    var runtimes = {}
+    for (var key in root.runtimes) {
+      if (key !== id) runtimes[key] = root.runtimes[key]
+    }
+    root.runtimes = runtimes
+    root.persist()
+  }
+
+  function restoreRule(id) {
+    var index = root.removedRules.indexOf(id)
+    if (index === -1) return
+    var next = root.removedRules.slice()
+    next.splice(index, 1)
+    root.removedRules = next
+    root.persist()
   }
 
   function addCustom(text) {
@@ -354,6 +382,18 @@ Item {
       var label = root.customs[n - 1].label
       root.removeCustom(n - 1)
       return "removed " + label
+    }
+    // `remove` already means a custom timer by index, so dropping a default
+    // rule needs its own verb rather than an overload that guesses.
+    function drop(id: string): string {
+      if (Model.DEFAULT_RULE_IDS.indexOf(id) === -1) return "not a default rule: " + id
+      root.removeRule(id)
+      return "removed " + id + " from the list"
+    }
+    function restore(id: string): string {
+      if (root.removedRules.indexOf(id) === -1) return "not removed: " + id
+      root.restoreRule(id)
+      return "restored " + id
     }
     function start(id: string): string {
       if (!root.ruleById(id)) return "unknown rule: " + id

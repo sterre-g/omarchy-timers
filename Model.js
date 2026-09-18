@@ -14,7 +14,12 @@ function boolOr(value, fallback) {
   return value === true || value === "true" || value === 1
 }
 
-function buildRules(settings) {
+// The rules that exist out of the box. Every one of them can be removed from
+// the panel; `removedRules` in the state file is what remembers that, so a
+// rule someone deleted does not come back on the next shell restart.
+var DEFAULT_RULE_IDS = ["pomodoro", "water", "look-away", "stand-up"]
+
+function defaultRules(settings) {
   var s = settings || {}
   return [
     {
@@ -28,6 +33,18 @@ function buildRules(settings) {
       cycle: clampInt(s.pomodoroCycle, 4, 1, 12),
       autostart: boolOr(s.pomodoroAutostart, false),
       breakScreen: boolOr(s.pomodoroBreakScreen, false)
+    },
+    {
+      id: "water",
+      type: "interval",
+      label: "Water",
+      glyph: "",
+      workSec: clampInt(s.waterEveryMinutes, 45, 1, 240) * MINUTE,
+      breakSec: clampInt(s.waterSeconds, 30, 5, 600),
+      longBreakSec: 0,
+      cycle: 0,
+      autostart: boolOr(s.waterEnabled, true),
+      breakScreen: boolOr(s.waterBreakScreen, false)
     },
     {
       id: "look-away",
@@ -54,6 +71,32 @@ function buildRules(settings) {
       breakScreen: boolOr(s.standUpBreakScreen, false)
     }
   ]
+}
+
+function isRemoved(removed, id) {
+  return Array.isArray(removed) && removed.indexOf(id) !== -1
+}
+
+// The rules the panel runs and lists: the defaults minus whatever was removed.
+function buildRules(settings, removed) {
+  return defaultRules(settings).filter(function (rule) { return !isRemoved(removed, rule.id) })
+}
+
+// The other half of the same split, for the row of "add back" buttons.
+function removedRules(settings, removed) {
+  return defaultRules(settings).filter(function (rule) { return isRemoved(removed, rule.id) })
+}
+
+// Anything that is not one of the known ids is dropped, so a hand-edited state
+// file cannot hide a rule that no longer exists and can never be restored.
+function sanitizeRemoved(value) {
+  var list = Array.isArray(value) ? value : []
+  var out = []
+  for (var i = 0; i < list.length; i++) {
+    var id = String(list[i])
+    if (DEFAULT_RULE_IDS.indexOf(id) !== -1 && out.indexOf(id) === -1) out.push(id)
+  }
+  return out
 }
 
 function idleRuntime() {
@@ -201,6 +244,7 @@ function notificationFor(event) {
       : "Take " + formatClock(event.seconds)
     if (event.ruleId === "look-away") body = "Look 20 feet away for " + event.seconds + " seconds"
     if (event.ruleId === "stand-up") body = "Stand up and move for " + formatClock(event.seconds)
+    if (event.ruleId === "water") body = "Drink some water"
     return { title: event.label, body: body, urgency: "normal" }
   }
   return { title: event.label, body: "Back to it, " + formatClock(event.seconds) + " to go", urgency: "low" }
@@ -334,12 +378,13 @@ function nextDueText(entry, runtime, clock) {
   return "in " + Math.floor(minutesAway / 60) + "h " + (minutesAway % 60) + "m"
 }
 
-function serializeState(customs, customRuntimes, ruleRuntimes) {
+function serializeState(customs, customRuntimes, ruleRuntimes, removed) {
   return {
     version: 1,
     customs: customs || [],
     customRuntimes: customRuntimes || {},
-    ruleRuntimes: ruleRuntimes || {}
+    ruleRuntimes: ruleRuntimes || {},
+    removedRules: sanitizeRemoved(removed)
   }
 }
 
@@ -348,9 +393,9 @@ function parseState(raw) {
   try {
     data = JSON.parse(String(raw || ""))
   } catch (e) {
-    return serializeState([], {}, {})
+    return serializeState([], {}, {}, [])
   }
-  if (!data || typeof data !== "object") return serializeState([], {}, {})
+  if (!data || typeof data !== "object") return serializeState([], {}, {}, [])
 
   var customs = []
   var list = Array.isArray(data.customs) ? data.customs : []
@@ -371,7 +416,8 @@ function parseState(raw) {
 
   return serializeState(customs,
     data.customRuntimes && typeof data.customRuntimes === "object" ? data.customRuntimes : {},
-    data.ruleRuntimes && typeof data.ruleRuntimes === "object" ? data.ruleRuntimes : {})
+    data.ruleRuntimes && typeof data.ruleRuntimes === "object" ? data.ruleRuntimes : {},
+    data.removedRules)
 }
 
 // A runtime restored from disk is only useful if it still points at the
@@ -403,7 +449,11 @@ if (typeof module !== "undefined" && module.exports) {
     MINUTE: MINUTE,
     clampInt: clampInt,
     boolOr: boolOr,
+    DEFAULT_RULE_IDS: DEFAULT_RULE_IDS,
+    defaultRules: defaultRules,
     buildRules: buildRules,
+    removedRules: removedRules,
+    sanitizeRemoved: sanitizeRemoved,
     idleRuntime: idleRuntime,
     isLongBreak: isLongBreak,
     phaseSeconds: phaseSeconds,
