@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "sterre.timers",
   "name": "Timers",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": "sterre-g",
   "license": "MIT",
   "description": "Pomodoro, water, 20-20-20 eye rest and stand-up as removable defaults over one timer engine, plus your own one-line reminders.",
